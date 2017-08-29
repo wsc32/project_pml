@@ -1,0 +1,88 @@
+---
+title: "Predicting quality of exercise"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+The goal of this project is therefore to predict the manner in which participants did their exercises. The data analysed in this project is from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Loading libraries
+The necessary libraries that will be used in this project are loaded and the seed number is set for reproducibility. 
+```{r libraries, echo=FALSE}
+suppressMessages(library(caret)); suppressMessages(library(ggplot2)); suppressMessages (library(randomForest))
+set.seed(31413)
+```
+
+## Downloading and partitioning datasets
+The datasets are downloaded. 
+```{r download}
+if(!file.exists("./data")){dir.create("./data")}
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url_train, destfile="./data/pml-training.csv")
+download.file(url_test, destfile="./data/pml-testing.csv")
+original_training <- read.csv("./data/pml-training.csv", na.strings=c("","NA","#DIV/0!")) 
+original_testing <- read.csv("./data/pml-testing.csv",na.strings=c("","NA","#DIV/0!")) 
+```
+40% of the training data set is partitioned out for cross validation. 
+```{r partition}
+inTrain <- createDataPartition(y=original_training$classe, p=0.6, list=FALSE)
+training <- original_training[inTrain,]   
+testing <- original_training[-inTrain,]
+```
+
+## Tidying data
+The original dataset contains 160 variables. Some variables contain mostly NAs, and will therefore be removed from the analysis. A threshold of 90% NAs is selected based on the histogram plot shown below. This removes 100 variables. In addition, the first 7 columns include the time and user information, which is irrelevant to our model building, and will be removed from the dataset as well. Finally, there are no variables with near zero variance to be removed from this dataset. The final clean data set contains 53 variables.
+```{r tidy training}
+frac_na <- data.frame(frac=colSums(is.na(training))/nrow(training))
+qplot(frac,data=frac_na,xlab="Fraction of NAs")
+colno <- which(frac_na$frac >= 0.9)
+training_clean <- training[,-colno]
+training_clean <- training_clean[,-(1:7)]
+nearZeroVar(training_clean,saveMetrics=TRUE)
+```
+The same set of manipulations is performed on the cross validation data set and the original testing data set.
+```{r tidy testing}
+testing_clean <- testing[,-colno]
+testing_clean <- testing_clean[,-(1:7)]
+original_testing_clean <- original_testing[,-colno]
+original_testing_clean <- original_testing_clean[,-(1:7)]
+```
+
+## Building the model and cross validation
+Three different models are used here, namely random forest, boosting and linear discriminant analysis.
+```{r model}
+set.seed(647)
+modFit_rf <- train(classe ~., data=training_clean,method="rf") ##Random forest
+print(modFit_rf)
+modFit_gbm <- train(classe ~., data=training_clean,method="gbm") ## Boosting
+print(modFit_gbm)
+modFit_lda <- train(classe ~., data=training_clean,method="lda") ## Linear discriminant analysis
+print(modFit_lda)
+```
+
+```{r cross validation}
+pred_rf <- predict(modFit_rf,testing_clean)
+confusionMatrix(testing_clean$classe,pred_rf)$overall[1]
+pred_gbm <- predict(modFit_gbm,testing_clean)
+confusionMatrix(testing_clean$classe,pred_gbm)$overall[1]
+pred_lda <- predict(modFit_lda,testing_clean)
+confusionMatrix(testing_clean$classe,pred_lda)$overall[1]
+```
+
+The random forest model gave the highest accuracy of 99.3%, compared to the 96.0% and 70.3% accuracy of boosting and linear discriminant analysis. The random forest model has the lowest out of sample error rate of 0.7% and will therefore be used as the prediction model.
+
+## Using prediction model to predict 20 different test cases
+Finally, the prediction model is applied to predict the 20 different test cases.
+```{r predict}
+pred_rf_test <- predict(modFit_rf,original_testing_clean)
+print(pred_rf_test)
+```
+
+
